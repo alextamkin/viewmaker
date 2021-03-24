@@ -1,0 +1,8 @@
+*DS_Store*
+.vscode
+wandb
+.log
+.npy
+data/
+.pyc
+__pycache__

@@ -1,0 +1,44 @@
+{
+    "exp_base": null,
+    "exp_name": "pretrain_viewmaker_librispeech_simclr_L1_forced_b01_100hour_64x64_resnet18",
+    "system": "PretrainViewMakerSimCLRSystem",
+    "cuda": true,
+    "distributed_backend": "ddp",
+    "gpu_device": 9,
+    "seed": 1337,
+    "data_loader_workers": 16,
+    "data_params": {
+        "test_url": "train-clean-100",
+        "small": true,
+        "input_size": 64
+    },
+    "model_params": {
+        "out_dim": 128,
+        "resnet": true,
+        "resnet_version": "resnet18",
+        "resnet_small": false,
+        "projection_head": false,
+        "noise_dim": 100,
+        "view_bound_magnitude": 0.1,
+        "num_res_blocks": 3
+    },
+    "loss_params": {
+        "objective": "AdversarialSimCLRLoss",
+        "view_maker_loss_weight": 1,
+        "t": 0.07
+    },
+    "optim_params": {
+        "batch_size": 128,
+        "learning_rate": 0.03,
+        "momentum": 0.9,
+        "weight_decay": 1e-4,
+        "validate_freq": 1,
+        "patience": 10,
+        "num_view_update": 1,
+        "viewmaker_optim": "adam"
+    },
+    "num_epochs": 200,
+    "validate": true,
+    "copy_checkpoint_freq": 5,
+    "continue_from_checkpoint": null
+}
