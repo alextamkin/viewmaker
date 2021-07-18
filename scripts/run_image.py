@@ -4,7 +4,10 @@ from src.systems import image_systems
 from src.utils.utils import load_json
 from src.utils.setup import process_config
 from src.utils.callbacks import MoCoLRScheduler
+from src.data import data
 import random, torch, numpy
+from src.utils import ssl_online
+from src.models import resnet as encoder
 
 import pytorch_lightning as pl
 import wandb
@@ -46,6 +49,27 @@ def run(args, gpu_device=None):
     SystemClass = SYSTEM[config.system]
     system = SystemClass(config)
 
+    # Data module and online evaluation.
+    if config.data_params.dataset == 'cifar10':
+        data_handle = data.get_cifar10_simclr_data_module
+    else:
+        raise NotImplementedError(f'Dataset {config.data_params.dataset} not supported.')
+    dm = data_handle(
+         config.optim_params.batch_size, 
+         default_augs=False,
+         num_workers=config.data_loader_workers)
+    online_evaluator_handle = ssl_online.SSLOnlineEvaluator
+
+    if config.online_eval == 'linear':
+         online_evaluator = online_evaluator_handle(
+            drop_p=0., 
+            hidden_dim=None, 
+            z_dim=config.model_params.out_dim, 
+            num_classes=dm.num_classes, 
+            dataset=config.data_params.dataset)
+    else:
+        raise ValueError(f'Unimplemented online evaluator {config.online_eval}')
+
     if config.optim_params.scheduler:
         lr_callback = globals()[config.optim_params.scheduler](
             initial_lr=config.optim_params.learning_rate,
@@ -55,9 +79,9 @@ def run(args, gpu_device=None):
                 int(0.8*config.num_epochs),
             ),
         )
-        callbacks = [lr_callback]
+        callbacks = [lr_callback, online_evaluator]
     else:
-        callbacks = []
+        callbacks = [online_evaluator]
 
     # TODO: adjust period for saving checkpoints.
     ckpt_callback = pl.callbacks.ModelCheckpoint(

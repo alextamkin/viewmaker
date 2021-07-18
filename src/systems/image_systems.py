@@ -337,7 +337,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
         return create_dataloader(self.val_dataset, self.config, self.batch_size, 
                                  shuffle=False, drop_last=False)
 
-class PretrainNeuTraLADViewMakerSystem(PretrainViewMakerSystem):
+class PretrainNeuTraLADViewMakerSystem(pl.LightningModule):
     '''Pytorch Lightning System for self-supervised pretraining 
     with NeuTraL AD generated views.
     '''
@@ -358,18 +358,9 @@ class PretrainNeuTraLADViewMakerSystem(PretrainViewMakerSystem):
             config.data_params.dataset,
             config.data_params.default_augmentations or 'none',
         )
-        # Used for computing knn validation accuracy
-        train_labels = self.train_dataset.dataset.targets
-        self.train_ordered_labels = np.array(train_labels)
 
         self.model = self.create_encoder()
         self.viewmaker = self.create_viewmaker()
-        
-        # Used for computing knn validation accuracy.
-        self.memory_bank = MemoryBank(
-            len(self.train_dataset),
-            self.config.model_params.out_dim,
-        )
 
     def view(self, imgs):
         if 'Expert' in self.config.system:
@@ -419,13 +410,6 @@ class PretrainNeuTraLADViewMakerSystem(PretrainViewMakerSystem):
         noise = utils.l2_normalize(torch.rand(shape, device=device) - 0.5)
         return noise
     
-    def get_repr(self, img):
-        '''Get the representation for a given image.'''
-        if 'Expert' not in self.config.system:
-            # The Expert system datasets are normalized already.
-            img = self.normalize(img)
-        return self.model(img)
-    
     def normalize(self, imgs):
         # These numbers were computed using compute_image_dset_stats.py
         if 'cifar' in self.config.data_params.dataset:
@@ -439,45 +423,31 @@ class PretrainNeuTraLADViewMakerSystem(PretrainViewMakerSystem):
     def forward(self, img, view=True, normalize=True, prepool=False):
         if view: img = self.view(img)
         embs = self.model(img)
+
+        if self.global_step % 200 == 0:
+            # Log some example views. 
+            views_to_log = img.permute(0,2,3,1).detach().cpu().numpy()[:10]
+            wandb.log({"examples": [wandb.Image(view, caption=f"Epoch: {self.current_epoch}, Step {self.global_step}") for view in views_to_log]})
         return embs
 
-    def get_enc_loss(self, imgs):
-        embs1 = self.forward(imgs, view=True)
-        embs2 = self.forward(imgs, view=True)
+    def get_enc_loss_and_acc(self, imgs):
+        embs1 = self.forward(imgs)
+        embs2 = self.forward(imgs)
         loss_function = SimCLRObjective(embs1, embs2, t=self.t)
-        encoder_loss = loss_function.get_loss()
-        return encoder_loss
-    
+        encoder_loss, encoder_acc = loss_function.get_loss_and_acc()
+        return encoder_loss, encoder_acc
+
     def get_vm_loss(self, imgs):
         embs = self.forward(imgs, view=False)
-        embs1 = self.forward(imgs, view=True)
-        embs2 = self.forward(imgs, view=True)
+        embs1 = self.forward(imgs)
+        embs2 = self.forward(imgs)
         loss_function = NeuTraLADLoss(embs, embs1, embs2, t=self.t)
-        view_maker_loss = loss_function.get_loss()
-        return view_maker_loss
-
-    def get_nearest_neighbor_label(self, img_embs, labels):
-        '''
-        Used for online kNN classifier.
-        For each image in validation, find the nearest image in the 
-        training dataset using the memory bank. Assume its label as
-        the predicted label.
-        '''
-        batch_size = img_embs.size(0)
-        all_dps = self.memory_bank.get_all_dot_products(img_embs)
-        _, neighbor_idxs = torch.topk(all_dps, k=1, sorted=False, dim=1)
-        neighbor_idxs = neighbor_idxs.squeeze(1)
-        neighbor_idxs = neighbor_idxs.cpu().numpy()
-
-        neighbor_labels = self.train_ordered_labels[neighbor_idxs]
-        neighbor_labels = torch.from_numpy(neighbor_labels).long()
-
-        num_correct = torch.sum(neighbor_labels.cpu() == labels.cpu()).item()
-        return num_correct, batch_size
+        vm_loss = loss_function.get_loss()
+        return vm_loss
     
     def training_step(self, batch, batch_idx, optimizer_idx):
         indices, img, img2, neg_img, _, = batch
-        encoder_loss = self.get_enc_loss(img)
+        encoder_loss, encoder_acc = self.get_enc_loss_and_acc(img)
         encoder_optim, vm_optim = self.optimizers()
         self.manual_backward(encoder_loss, encoder_optim)
 
@@ -496,48 +466,33 @@ class PretrainNeuTraLADViewMakerSystem(PretrainViewMakerSystem):
 
         metrics = {
             'view_maker_loss': vm_loss,
-            'encoder_loss': encoder_loss, 'temperature': self.t,
-            't', self.t
+            'encoder_loss': encoder_loss, 
+            'encoder_xent_acc': encoder_acc,
+            'temperature': self.t,
         }
-        if self.global_step % self.config.trainer.log_img_freq == 0:
-            self.log_imgs(self.view(img))
         return {'loss': vm_loss, 'enc_loss': encoder_loss, 'log': metrics}
 
     def validation_step(self, batch, batch_idx):
         indices, img, img2, neg_img, _, = batch
-        encoder_loss = self.get_enc_loss(img)
-        view_maker_loss = self.get_vm_loss(img)
+        encoder_loss, encoder_acc = self.get_enc_loss_and_acc(img)
 
-        img_embs = self.get_repr(img)  # Need encoding of image without augmentations (only normalization).
-        labels = batch[-1]
-        num_correct, batch_size = self.get_nearest_neighbor_label(img_embs, labels)
         output = OrderedDict({
-            'val_loss': encoder_loss + view_maker_loss,
             'val_encoder_loss': encoder_loss,
-            'val_view_maker_loss': view_maker_loss,
-            'val_num_correct': torch.tensor(num_correct, dtype=float, device=self.device),
-            'val_num_total': torch.tensor(batch_size, dtype=float, device=self.device),
+            'val_xent_acc': encoder_loss,
+            'temperature': self.t,
         })
 
         return output
 
-    def validation_epoch_end(self, outputs):
-        metrics = {}
-        for key in outputs[0].keys():
-            try:
-                metrics[key] = torch.stack([elem[key] for elem in outputs]).mean()
-            except:
-                pass
-
-        num_correct = torch.stack([out['val_num_correct'] for out in outputs]).sum()
-        num_total = torch.stack([out['val_num_total'] for out in outputs]).sum()
-        val_acc = num_correct / float(num_total)
-        metrics['val_acc'] = val_acc
-        progress_bar = {'acc': val_acc}
-        return {'val_loss': metrics['val_loss'], 
-                'log': metrics, 
-                'val_acc': val_acc, 
-                'progress_bar': progress_bar}
+    def log_imgs(self, imgs, num_to_log=10):
+        # Log some example views.
+        imgs_to_log = imgs.permute(0, 2, 3, 1).detach().cpu().numpy()[:num_to_log]
+        wandb_examples = []
+        for img in imgs_to_log:
+            caption = f"Epoch: {self.current_epoch}, Step {self.global_step}"
+            wandb_ex = wandb.Image(img, caption=caption)
+            wandb_examples.append(wandb_ex)
+        self.logger.experiment.log({"examples": wandb_examples})
 
     def configure_optimizers(self):
         # Optimize temperature with encoder.
