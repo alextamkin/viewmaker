@@ -13,6 +13,7 @@ torch.backends.cudnn.benchmark = True
 
 SYSTEM = {
     'PretrainViewMakerSystem': image_systems.PretrainViewMakerSystem,
+    'PretrainNeuTraLADViewMakerSystem': image_systems.PretrainNeuTraLADViewMakerSystem,
     'PretrainExpertSystem': image_systems.PretrainExpertSystem,
     'TransferViewMakerSystem': image_systems.TransferViewMakerSystem,
     'TransferExpertSystem': image_systems.TransferExpertSystem,
@@ -64,7 +65,7 @@ def run(args, gpu_device=None):
         save_top_k=-1,
         period=1,
     )
-    wandb.init(project='image', entity='viewmaker', name=config.exp_name, config=config, sync_tensorboard=True)
+    wandb.init(project='image_viewmaker', entity='vm', name=config.exp_name, config=config, sync_tensorboard=True)
     trainer = pl.Trainer(
         default_root_dir=config.exp_dir,
         gpus=gpu_device,
