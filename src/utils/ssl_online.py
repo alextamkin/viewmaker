@@ -106,7 +106,7 @@ class SSLOnlineEvaluator(Callback):  # pragma: no cover
     def get_representations(self, pl_module: LightningModule, x: Tensor) -> Tensor:
         # Default augmentations already applied. Don't normalize or apply views.
         # Also, get representations from prepool layer.
-        representations = pl_module(x, view=False, normalize=False, prepool=True)
+        representations = pl_module(x, view=False)
         representations = representations.reshape(representations.size(0), -1)
         return representations
 

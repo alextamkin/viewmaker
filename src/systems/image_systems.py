@@ -135,101 +135,36 @@ class PretrainViewMakerSystem(pl.LightningModule):
         imgs = (imgs - mean[None, :, None, None]) / std[None, :, None, None]
         return imgs
 
-    def forward(self, batch, train=True):
-        indices, img, img2, neg_img, _, = batch
-        if self.loss_name == 'AdversarialNCELoss':
-            view1 = self.view(img)
-            view1_embs = self.model(view1)
-            emb_dict = {
-                'indices': indices,
-                'view1_embs': view1_embs,
-            }
-        elif self.loss_name == 'AdversarialSimCLRLoss':
-            if self.config.model_params.double_viewmaker:
-                view1, view2 = self.view(img)
-            else:
-                view1 = self.view(img)
-                view2 = self.view(img2)
-            emb_dict = {
-                'indices': indices,
-                'view1_embs': self.model(view1),
-                'view2_embs': self.model(view2),
-            }
-        else:
-            raise ValueError(f'Unimplemented loss_name {self.loss_name}.')
-        
+    def forward(self, img, view=True):
+        if view: img = self.view(img)
+        embs = self.model(img)
+
         if self.global_step % 200 == 0:
             # Log some example views. 
-            views_to_log = view1.permute(0,2,3,1).detach().cpu().numpy()[:10]
-            wandb.log({"examples": [wandb.Image(view, caption=f"Epoch: {self.current_epoch}, Step {self.global_step}, Train {train}") for view in views_to_log]})
+            views_to_log = img.permute(0,2,3,1).detach().cpu().numpy()[:10]
+            wandb.log({"examples": [wandb.Image(view, caption=f"Epoch: {self.current_epoch}, Step {self.global_step}") for view in views_to_log]})
+        return embs
 
-        return emb_dict
-
-    def get_losses_for_batch(self, emb_dict, train=True):
-        if self.loss_name == 'AdversarialSimCLRLoss':
-            view_maker_loss_weight = self.config.loss_params.view_maker_loss_weight
-            loss_function = AdversarialSimCLRLoss(
-                embs1=emb_dict['view1_embs'],
-                embs2=emb_dict['view2_embs'],
-                t=self.t,
-                view_maker_loss_weight=view_maker_loss_weight
-            )
-            encoder_loss, view_maker_loss = loss_function.get_loss()
-            img_embs = emb_dict['view1_embs'] 
-        elif self.loss_name == 'AdversarialNCELoss':
-            view_maker_loss_weight = self.config.loss_params.view_maker_loss_weight
-            loss_function = AdversarialNCELoss(
-                emb_dict['indices'],
-                emb_dict['view1_embs'],
-                self.memory_bank,
-                k=self.config.loss_params.k,
-                t=self.t,
-                m=self.config.loss_params.m,
-                view_maker_loss_weight=view_maker_loss_weight
-            )
-            encoder_loss, view_maker_loss = loss_function.get_loss()
-            img_embs = emb_dict['view1_embs'] 
-        else:
+    def get_losses_for_batch(self, imgs):
+        if self.loss_name != 'AdversarialSimCLRLoss':
             raise Exception(f'Objective {self.loss_name} is not supported.') 
-        
-        # Update memory bank.
-        if train:
-            with torch.no_grad():
-                if self.loss_name == 'AdversarialNCELoss':
-                    new_data_memory = loss_function.updated_new_data_memory()
-                    self.memory_bank.update(emb_dict['indices'], new_data_memory)
-                else:
-                    new_data_memory = utils.l2_normalize(img_embs, dim=1)
-                    self.memory_bank.update(emb_dict['indices'], new_data_memory)
 
+        view_maker_loss_weight = self.config.loss_params.view_maker_loss_weight
+        embs1 = self.forward(imgs)
+        embs2 = self.forward(imgs)
+        loss_function = AdversarialSimCLRLoss(
+            embs1,
+            embs2,
+            t=self.t,
+            view_maker_loss_weight=view_maker_loss_weight
+        )
+        encoder_loss, view_maker_loss = loss_function.get_loss()
         return encoder_loss, view_maker_loss
 
-    def get_nearest_neighbor_label(self, img_embs, labels):
-        '''
-        Used for online kNN classifier.
-        For each image in validation, find the nearest image in the 
-        training dataset using the memory bank. Assume its label as
-        the predicted label.
-        '''
-        batch_size = img_embs.size(0)
-        all_dps = self.memory_bank.get_all_dot_products(img_embs)
-        _, neighbor_idxs = torch.topk(all_dps, k=1, sorted=False, dim=1)
-        neighbor_idxs = neighbor_idxs.squeeze(1)
-        neighbor_idxs = neighbor_idxs.cpu().numpy()
-
-        neighbor_labels = self.train_ordered_labels[neighbor_idxs]
-        neighbor_labels = torch.from_numpy(neighbor_labels).long()
-
-        num_correct = torch.sum(neighbor_labels.cpu() == labels.cpu()).item()
-        return num_correct, batch_size
-
     def training_step(self, batch, batch_idx, optimizer_idx):
-        emb_dict = self.forward(batch)
+        indices, img, img2, neg_img, _, = batch
         emb_dict['optimizer_idx'] = torch.tensor(optimizer_idx, device=self.device)
-        return emb_dict
-    
-    def training_step_end(self, emb_dict):
-        encoder_loss, view_maker_loss = self.get_losses_for_batch(emb_dict, train=True)
+        encoder_loss, view_maker_loss = self.get_losses_for_batch(img)
 
         # Handle Tensor (dp) and int (ddp) cases
         if emb_dict['optimizer_idx'].__class__ == int or emb_dict['optimizer_idx'].dim() == 0:
@@ -248,43 +183,15 @@ class PretrainViewMakerSystem(pl.LightningModule):
             return {'loss': view_maker_loss, 'log': metrics}
 
     def validation_step(self, batch, batch_idx):
-        emb_dict = self.forward(batch, train=False)
-        if 'img_embs' in emb_dict:
-            img_embs = emb_dict['img_embs']
-        else:
-            _, img, _, _, _ = batch
-            img_embs = self.get_repr(img)  # Need encoding of image without augmentations (only normalization).
-        labels = batch[-1]
-        encoder_loss, view_maker_loss = self.get_losses_for_batch(emb_dict, train=False)
+        indices, img, img2, neg_img, _, = batch
+        encoder_loss, view_maker_loss = self.get_losses_for_batch(img)
 
-        num_correct, batch_size = self.get_nearest_neighbor_label(img_embs, labels)
         output = OrderedDict({
-            'val_loss': encoder_loss + view_maker_loss,
             'val_encoder_loss': encoder_loss,
             'val_view_maker_loss': view_maker_loss,
-            'val_num_correct': torch.tensor(num_correct, dtype=float, device=self.device),
-            'val_num_total': torch.tensor(batch_size, dtype=float, device=self.device),
+            'temperature': self.t,
         })
-
         return output
-
-    def validation_epoch_end(self, outputs):
-        metrics = {}
-        for key in outputs[0].keys():
-            try:
-                metrics[key] = torch.stack([elem[key] for elem in outputs]).mean()
-            except:
-                pass
-
-        num_correct = torch.stack([out['val_num_correct'] for out in outputs]).sum()
-        num_total = torch.stack([out['val_num_total'] for out in outputs]).sum()
-        val_acc = num_correct / float(num_total)
-        metrics['val_acc'] = val_acc
-        progress_bar = {'acc': val_acc}
-        return {'val_loss': metrics['val_loss'], 
-                'log': metrics, 
-                'val_acc': val_acc, 
-                'progress_bar': progress_bar}
 
     def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_idx, 
                        second_order_closure=None, on_tpu=False, using_native_amp=False, using_lbfgs=False):
@@ -420,7 +327,7 @@ class PretrainNeuTraLADViewMakerSystem(pl.LightningModule):
         imgs = (imgs - mean[None, :, None, None]) / std[None, :, None, None]
         return imgs
 
-    def forward(self, img, view=True, normalize=True, prepool=False):
+    def forward(self, img, view=True):
         if view: img = self.view(img)
         embs = self.model(img)
 
@@ -475,24 +382,15 @@ class PretrainNeuTraLADViewMakerSystem(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         indices, img, img2, neg_img, _, = batch
         encoder_loss, encoder_acc = self.get_enc_loss_and_acc(img)
-
+        view_maker_loss = self.get_vm_loss(img)
         output = OrderedDict({
             'val_encoder_loss': encoder_loss,
-            'val_xent_acc': encoder_loss,
+            'val_xent_acc': encoder_acc,
+            'val_view_maker_loss': view_maker_loss,
             'temperature': self.t,
         })
 
         return output
-
-    def log_imgs(self, imgs, num_to_log=10):
-        # Log some example views.
-        imgs_to_log = imgs.permute(0, 2, 3, 1).detach().cpu().numpy()[:num_to_log]
-        wandb_examples = []
-        for img in imgs_to_log:
-            caption = f"Epoch: {self.current_epoch}, Step {self.global_step}"
-            wandb_ex = wandb.Image(img, caption=caption)
-            wandb_examples.append(wandb_ex)
-        self.logger.experiment.log({"examples": wandb_examples})
 
     def configure_optimizers(self):
         # Optimize temperature with encoder.
