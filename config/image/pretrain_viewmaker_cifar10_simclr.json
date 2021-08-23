@@ -1,6 +1,6 @@
 {
-    "exp_base": null,
-    "exp_name": "pretrain_viewmaker_cifar_simclr_resnet18",
+    "exp_base": "/mnt/fs3/jasmine7/viewmaker/models",
+    "exp_name": "pretrain_viewmaker_cifar_new_original_adversarial_simclr",
     "system": "PretrainViewMakerSystem",
     "cuda": true,
     "gpu_device": 0,

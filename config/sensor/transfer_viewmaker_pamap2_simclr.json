@@ -1,14 +1,14 @@
 {
-    "exp_base": null,
-    "exp_name": "transfer_viewmaker_pamap2_simclr",
-    "system": "TransferViewmakerSystem",
+    "exp_base": "/mnt/fs3/jasmine7/viewmaker/transfer",
+    "exp_name": "transfer_viewmaker_pamap2_torch_1.7_original_adversarial_simclr_fast",
+    "system": "TransferViewMakerSystem",
     "cuda": true,
     "gpu_device": 0,
     "seed": 1337,
     "data_loader_workers": 8,
     "pretrain_model": {
-        "exp_dir": null,
-        "checkpoint_name": "epoch=199.ckpt"
+        "exp_dir": "/mnt/fs3/jasmine7/viewmaker/models/experiments/pretrain_viewmaker_pamap2_torch_1.7_original_adversarial_simclr_fast",
+        "checkpoint_name": "epoch=199-step=15599.ckpt"
     },
     "optim_params": {
         "batch_size": 256,
