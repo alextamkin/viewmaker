@@ -11,8 +11,8 @@ import numpy
 import pytorch_lightning as pl
 
 SYSTEM = {
-    'PretrainViewmakerSystem': sensor_systems.PretrainViewMakerSystem,
-    'TransferViewmakerSystem': sensor_systems.TransferViewMakerSystem,
+    'PretrainViewMakerSystem': sensor_systems.PretrainViewMakerSystem,
+    'TransferViewMakerSystem': sensor_systems.TransferViewMakerSystem,
     'PretrainExpertSimCLRSystem': sensor_systems.PretrainExpertSimCLRSystem,
     'TransferExpertSystem': sensor_systems.TransferExpertSystem,
 }
@@ -55,7 +55,7 @@ def run(args, gpu_device=None):
         save_top_k=-1,
         period=1,
     )
-    wandb.init(project='sensor', entity='viewmaker',
+    wandb.init(project='sensor_viewmaker', entity='vm',
                name=config.exp_name, config=config, sync_tensorboard=True)
 
     trainer = pl.Trainer(

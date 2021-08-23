@@ -1,6 +1,6 @@
 {
-    "exp_base": null,
-    "exp_name": "pretrain_viewmaker_librispeech_simclr_L1_forced_b01_100hour_64x64_resnet18",
+    "exp_base": "/mnt/fs3/jasmine7/viewmaker/models",
+    "exp_name": "pretrain_viewmaker_librispeech_new_original_adversarial_simclr_L1_forced_b01_100hour_64x64_resnet18",
     "system": "PretrainViewMakerSimCLRSystem",
     "cuda": true,
     "distributed_backend": "ddp",

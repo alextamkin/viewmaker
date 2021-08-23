@@ -1,6 +1,6 @@
 {
-    "exp_base": null,
-    "exp_name": "pretrain_viewmaker_pamap2_simclr",
+    "exp_base": "/mnt/fs3/jasmine7/viewmaker/models",
+    "exp_name": "pretrain_viewmaker_pamap2_new_original_adversarial_simclr",
     "system": "PretrainViewMakerSystem",
     "cuda": true,
     "distributed_backend": "ddp",

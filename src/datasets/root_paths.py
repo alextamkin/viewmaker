@@ -1,5 +1,5 @@
 DATA_ROOTS = {
-    'cifar10': 'data/cifar10',
+    'cifar10': '/data5/jasmine7/cifar10',
     'meta_aircraft': 'data/aircraft/fgvc-aircraft-2013b',
     'meta_cu_birds': 'data/cu_birds/CUB_200_2011',
     'meta_dtd': 'data/dtd/dtd',
@@ -12,7 +12,7 @@ DATA_ROOTS = {
     'audio_mnist': 'data/audio_mnist',
     'fluent_speech': 'data/fluent_speech_commands',
     'google_speech': 'data/google_speech_commands',
-    'librispeech': 'data/librispeech',
+    'librispeech': '/data5/wumike/librispeech',
     'voxceleb1': 'data/voxceleb1',
-    'pamap2': 'data/sensor/PAMAP2_Dataset/Protocol',
+    'pamap2': '/data5/wumike/sensor/PAMAP2_Dataset/Protocol',
 } 
