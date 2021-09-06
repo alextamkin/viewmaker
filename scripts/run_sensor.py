@@ -53,8 +53,9 @@ def run(args, gpu_device=None):
     ckpt_callback = pl.callbacks.ModelCheckpoint(
         os.path.join(config.exp_dir, 'checkpoints'),
         save_top_k=-1,
-        period=1,
+        every_n_epochs=1,
     )
+    callbacks = [ckpt_callback]
     wandb.init(project='sensor_viewmaker', entity='vm',
                name=config.exp_name, config=config, sync_tensorboard=True)
 
@@ -64,11 +65,11 @@ def run(args, gpu_device=None):
         distributed_backend=config.distributed_backend or 'dp',
         max_epochs=config.num_epochs,
         min_epochs=config.num_epochs,
-        checkpoint_callback=ckpt_callback,
+        checkpoint_callback=ckpt_callback, # True for pl 1.4, ckpt_callback for pl 0.9
         resume_from_checkpoint=args.ckpt or config.continue_from_checkpoint,
         profiler=args.profiler,
         precision=config.optim_params.precision or 32,
-        callbacks=None,
+        callbacks=callbacks,
         val_check_interval=config.val_check_interval or 1.0,
         limit_val_batches=config.limit_val_batches or 1.0,
     )

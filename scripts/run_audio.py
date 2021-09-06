@@ -69,14 +69,15 @@ def run(args, gpu_device=None):
         )
         callbacks = [lr_callback]
     else:
-        callbacks = None
+        callbacks = []
 
     # TODO: adjust period for saving checkpoints.
     ckpt_callback = pl.callbacks.ModelCheckpoint(
         os.path.join(config.exp_dir, 'checkpoints'),
         save_top_k=-1,
-        period=1,
+        every_n_epochs=1,
     )
+    callbacks.append(ckpt_callback)
     wandb.init(project='audio_viewmaker', entity='vm', name=config.exp_name, config=config, sync_tensorboard=True)
     trainer = pl.Trainer(
         default_root_dir=config.exp_dir,

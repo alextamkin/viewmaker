@@ -1,12 +1,12 @@
 {
     "exp_base": "/mnt/fs3/jasmine7/viewmaker/models",
-    "exp_name": "pretrain_viewmaker_librispeech_new_original_adversarial_simclr_L1_forced_b01_100hour_64x64_resnet18",
+    "exp_name": "pretrain_viewmaker_librispeech_pl_14_fast_original_adversarial_simclr_L1_forced_b01_100hour_64x64_resnet18",
     "system": "PretrainViewMakerSimCLRSystem",
     "cuda": true,
     "distributed_backend": "ddp",
     "gpu_device": 9,
     "seed": 1337,
-    "data_loader_workers": 16,
+    "data_loader_workers": 8,
     "data_params": {
         "test_url": "train-clean-100",
         "small": true,

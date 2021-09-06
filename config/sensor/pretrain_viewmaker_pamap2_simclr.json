@@ -1,6 +1,6 @@
 {
     "exp_base": "/mnt/fs3/jasmine7/viewmaker/models",
-    "exp_name": "pretrain_viewmaker_pamap2_new_original_adversarial_simclr",
+    "exp_name": "pretrain_viewmaker_pamap2_pl_09_budget_0.5_fast_original_adversarial_simclr",
     "system": "PretrainViewMakerSystem",
     "cuda": true,
     "distributed_backend": "ddp",
@@ -13,7 +13,7 @@
         "resnet_version": "resnet18",
         "resnet_small": true,
         "projection_head": false,
-        "view_bound_magnitude": 0.05,
+        "view_bound_magnitude": 0.5,
         "num_res_blocks": 3
     },
     "loss_params": {
